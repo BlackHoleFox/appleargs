@@ -169,6 +169,11 @@ unsafe extern "C" fn init_function(
     _envp: *const *const c_char,
     mut applep: *const *const c_char,
 ) {
+    // Set up an abort guard. It's likely to be extremely bad for us to panic
+    // inside a `__mod_init_func`, even more than unwinding across C code
+    // normally would be. Eventually rustc will set an abort guard up for us in
+    // `extern "C" fn`, but for now it doesn't, so we do it manually.
+    let panic_in_static_ctor_sounds_bad = AbortGuard;
     let mut v: Vec<&'static [u8]> = Vec::new();
 
     // Safety: `applep` is not null, so its valid to read another pointer from.
@@ -199,11 +204,27 @@ unsafe extern "C" fn init_function(
         Box::into_raw(v.into_boxed_slice()).cast::<&'static [u8]>(),
         Ordering::Release,
     );
+    // Disarm the abort guard.
+    core::mem::forget(panic_in_static_ctor_sounds_bad);
 }
 
 extern "C" {
     /// Provided by libc or compiler_builtins.
     fn strlen(s: *const c_char) -> usize;
+}
+
+struct AbortGuard;
+impl Drop for AbortGuard {
+    #[cold]
+    #[inline(never)]
+    fn drop(&mut self) {
+        // It would be better to use the real `abort`, but the only way for this
+        // struct to have `Drop` run is if the dtor is run during unwinding of
+        // some other panic, which means this will be a double panic (which
+        // aborts). That said, this should ever happen unless an allocator
+        // panics (and they shouldn't), so whatever.
+        panic!("Triggering abort via double-panic");
+    }
 }
 
 #[used]
