@@ -8,6 +8,8 @@ use std::ffi::OsStr;
 use std::os::raw::{c_char, c_int};
 use std::os::unix::prelude::OsStrExt;
 
+pub mod env;
+
 // todo: (target_os = "tvos", target_os = "watchos") after testing
 #[cfg(not(any(target_os = "macos", target_os = "ios")))]
 compile_error!("appleargs is not supported on this platform");
@@ -71,7 +73,7 @@ impl FusedIterator for AppleArgs {}
 /// See the top-level documentation's example of what this could return.
 #[inline]
 pub fn apple_args() -> AppleArgs {
-    let inner = args_slice_iter();
+    let inner = args_slice().iter();
 
     AppleArgs { inner }
 }
@@ -134,7 +136,7 @@ impl FusedIterator for AppleArgsOs {}
 /// See the top-level documentation's example of what this could return.
 #[inline]
 pub fn apple_args_os() -> AppleArgsOs {
-    let inner = args_slice_iter();
+    let inner = args_slice().iter();
 
     AppleArgsOs { inner }
 }
@@ -143,7 +145,7 @@ fn str_from_slice<'a>(bytes: &&'a [u8]) -> &'a str {
     core::str::from_utf8(bytes).expect("apple argument was not valid UTF-8")
 }
 
-fn args_slice_iter() -> core::slice::Iter<'static, &'static [u8]> {
+fn args_slice() -> &'static [&'static [u8]] {
     // This synchronizes with the `Release` store and acts as a fence.
     let data = ARGS_DATA.load(Ordering::Acquire);
 
@@ -157,7 +159,6 @@ fn args_slice_iter() -> core::slice::Iter<'static, &'static [u8]> {
             unsafe { core::slice::from_raw_parts(ptr.as_ptr(), len) }
         })
         .unwrap_or(&[])
-        .iter()
 }
 
 static ARGS_DATA: AtomicPtr<&'static [u8]> = AtomicPtr::new(ptr::null_mut());
