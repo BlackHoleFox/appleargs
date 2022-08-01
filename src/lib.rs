@@ -188,7 +188,7 @@ unsafe extern "C" fn init_function(
         let s = core::slice::from_raw_parts(ptr, len); // Explicit nul skip.
 
         if !s.is_empty() {
-            v.push(Box::leak(s.to_owned().into_boxed_slice()));
+            v.push(Box::leak(s.into()));
         }
 
         // Safety: This will never wrap and after incrementing
@@ -196,14 +196,12 @@ unsafe extern "C" fn init_function(
         applep = applep.add(1);
     }
 
+    let vslice = v.leak::<'static>();
     // `Relaxed` is fine because the store of `data` with
     // `Release` acts as a fence, and `len` is always loaded
     // after `data`.
-    ARGS_LEN.store(v.len(), Ordering::Relaxed);
-    ARGS_DATA.store(
-        Box::into_raw(v.into_boxed_slice()).cast::<&'static [u8]>(),
-        Ordering::Release,
-    );
+    ARGS_LEN.store(vslice.len(), Ordering::Relaxed);
+    ARGS_DATA.store(vslice.as_mut_ptr(), Ordering::Release);
     // Disarm the abort guard.
     core::mem::forget(panic_in_static_ctor_sounds_bad);
 }
