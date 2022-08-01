@@ -1,0 +1,6 @@
+[target.x86_64-apple-ios] # Probably good enough for now.
+rustflags = ["-Clink-arg=-mios-simulator-version-min=9.0"] # Version is just somewhere below the simulator iOS version.
+runner = ["cargo", "run", "--manifest-path", "./ci/ios-runner/Cargo.toml", "--target-dir", "./target", "--"]
+
+[env]
+ios_runner_crate = "appleargs"
