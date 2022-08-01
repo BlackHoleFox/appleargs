@@ -18,7 +18,7 @@ compile_error!("appleargs is not supported on this platform");
 /// valid UTF-8.
 #[derive(Clone)]
 pub struct AppleArgs {
-    inner: core::slice::Iter<'static, Vec<u8>>,
+    inner: core::slice::Iter<'static, &'static [u8]>,
 }
 
 impl core::fmt::Debug for AppleArgs {
@@ -81,7 +81,7 @@ pub fn apple_args() -> AppleArgs {
 /// This iterator does not check that any argument is a valid UTF-8 string.
 #[derive(Clone)]
 pub struct AppleArgsOs {
-    inner: core::slice::Iter<'static, Vec<u8>>,
+    inner: core::slice::Iter<'static, &'static [u8]>,
 }
 
 impl core::fmt::Debug for AppleArgsOs {
@@ -139,12 +139,11 @@ pub fn apple_args_os() -> AppleArgsOs {
     AppleArgsOs { inner }
 }
 
-#[allow(clippy::ptr_arg)]
-fn str_from_slice(bytes: &Vec<u8>) -> &str {
+fn str_from_slice<'a>(bytes: &&'a [u8]) -> &'a str {
     core::str::from_utf8(bytes).expect("apple argument was not valid UTF-8")
 }
 
-fn args_slice_iter() -> core::slice::Iter<'static, Vec<u8>> {
+fn args_slice_iter() -> core::slice::Iter<'static, &'static [u8]> {
     // This synchronizes with the `Release` store and acts as a fence.
     let data = ARGS_DATA.load(Ordering::Acquire);
 
@@ -161,7 +160,7 @@ fn args_slice_iter() -> core::slice::Iter<'static, Vec<u8>> {
         .iter()
 }
 
-static ARGS_DATA: AtomicPtr<Vec<u8>> = AtomicPtr::new(ptr::null_mut());
+static ARGS_DATA: AtomicPtr<&'static [u8]> = AtomicPtr::new(ptr::null_mut());
 static ARGS_LEN: AtomicUsize = AtomicUsize::new(0);
 
 unsafe extern "C" fn init_function(
@@ -170,12 +169,12 @@ unsafe extern "C" fn init_function(
     _envp: *const *const c_char,
     mut applep: *const *const c_char,
 ) {
-    let mut v: Vec<Vec<u8>> = Vec::new();
+    let mut v: Vec<&'static [u8]> = Vec::new();
 
     // Safety: `applep` is not null, so its valid to read another pointer from.
     while !applep.is_null() && !applep.read().is_null() {
         // Safety: See above
-        let p: *const i8 = applep.read();
+        let p: *const c_char = applep.read();
 
         // Safety: `applep` was pointing at a valid nul-terminated
         // string.
@@ -184,7 +183,7 @@ unsafe extern "C" fn init_function(
         let s = core::slice::from_raw_parts(ptr, len); // Explicit nul skip.
 
         if !s.is_empty() {
-            v.push(s.to_owned());
+            v.push(Box::leak(s.to_owned().into_boxed_slice()));
         }
 
         // Safety: This will never wrap and after incrementing
@@ -197,7 +196,7 @@ unsafe extern "C" fn init_function(
     // after `data`.
     ARGS_LEN.store(v.len(), Ordering::Relaxed);
     ARGS_DATA.store(
-        Box::into_raw(v.into_boxed_slice()).cast::<Vec<u8>>(),
+        Box::into_raw(v.into_boxed_slice()).cast::<&'static [u8]>(),
         Ordering::Release,
     );
 }
