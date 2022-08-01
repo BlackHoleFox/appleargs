@@ -1,0 +1,63 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - master
+
+env:
+  RUST_BACKTRACE: short
+  # CI builds don't benefit very much from this.
+  CARGO_INCREMENTAL: 0
+
+jobs:
+  fmt:
+    name: Format
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - uses: hecrj/setup-rust-action@v1
+        with:
+          components: rustfmt
+  
+      - name: Check formatting
+        run: cargo fmt --check
+
+  check:
+    name: Clippy
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v2
+      - uses: hecrj/setup-rust-action@v1
+        with:
+          components: clippy
+  
+      - name: Check code
+        run: cargo clippy
+
+  test:
+    name: Test macOS ${{ matrix.macos_version }}
+    runs-on: macos-${{ matrix.macos_version }}
+    strategy:
+      fail-fast: false
+      matrix:
+        macos_version: ["10.15", "11", "12"]
+    steps:
+      - uses: actions/checkout@v2
+      - uses: hecrj/setup-rust-action@v1
+        with:
+          targets: "x86_64-apple-ios"
+  
+      - run: cargo test --verbose
+
+      - name: Test iOS
+        # 11 and 12 don't have iOS 12.
+        if: matrix.macos_version == 10.15
+        # Runs on simulator
+        # Building the test binary with the old XCode fails, so build the runner before
+        # actually running the tests on the sim.
+        run: |
+          cargo test --verbose --target x86_64-apple-ios -- --build-only
+          sudo xcode-select --switch /Applications/Xcode_10.3.app/Contents/Developer
+          cargo test --verbose --target x86_64-apple-ios

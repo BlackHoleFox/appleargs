@@ -173,6 +173,11 @@ fn main() {
         process::exit(-1);
     }
 
+    if args.contains(&String::from("--build-only")) {
+        println!("not running tests, exiting");
+        process::exit(0)
+    }
+
     let test_binary_path = Path::new(&args[1]);
     let crate_name = test_binary_path.file_name().unwrap();
     let test_binary_args: Vec<&str> = args.iter().skip(2).map(String::as_str).collect();
