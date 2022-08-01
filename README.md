@@ -33,7 +33,11 @@ The values are set during the [exec sequence] of a process and subsequently read
 ```
 
 ## Supported Operating Systems
-This crate should on most macOS versions (but is not explictly tested). Automated testing occurs on the latest version of macOS. It also should work on iOS.
+This crate should on most macOS and iOS versions (but is not explictly tested). Automated testing occurs on:
+- macOS 10.15
+- macOS 11
+- macOS 12
+- iOS 12.4
 
 [exec sequence]: https://github.com/apple-oss-distributions/xnu/blob/e7776783b89a353188416a9a346c6cdb4928faad/bsd/kern/kern_exec.c#L5508
 

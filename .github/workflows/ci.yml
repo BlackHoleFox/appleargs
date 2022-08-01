@@ -48,7 +48,9 @@ jobs:
       - uses: hecrj/setup-rust-action@v1
         with:
           targets: "x86_64-apple-ios"
-  
+
+      # If it ever breaks, this is Important Knowledge.
+      - run: uname -a
       - run: cargo test --verbose
 
       - name: Test iOS

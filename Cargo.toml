@@ -2,7 +2,12 @@
 name = "appleargs"
 version = "0.1.0"
 edition = "2021"
+authors = ["BlackHoleFox <blackholefoxdev@gmail.com>"]
 license = "Apache-2.0 OR MIT"
+repository = "https://github.com/BlackHoleFox/appleargs"
+description = "Obtain the current process' apple arguments"
+keywords = ["apple", "darwin", "macos", "args", "applep"]
+categories = ["os::macos-apis"] 
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
