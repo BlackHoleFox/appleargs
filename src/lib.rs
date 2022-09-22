@@ -2,15 +2,40 @@
 #![deny(missing_docs, clippy::undocumented_unsafe_blocks)]
 
 use core::iter::FusedIterator;
-use core::ptr::{self, NonNull};
-use core::sync::atomic::{AtomicPtr, AtomicUsize, Ordering};
 use std::ffi::OsStr;
-use std::os::raw::{c_char, c_int};
 use std::os::unix::prelude::OsStrExt;
 
-// todo: (target_os = "tvos", target_os = "watchos") after testing
-#[cfg(not(any(target_os = "macos", target_os = "ios")))]
-compile_error!("appleargs is not supported on this platform");
+pub mod env;
+
+#[cfg(any(
+    target_os = "macos",
+    target_os = "ios",
+    target_os = "tvos",
+    target_os = "watchos"
+))]
+mod sys;
+
+#[cfg(not(any(
+    target_os = "macos",
+    target_os = "ios",
+    target_os = "tvos",
+    target_os = "watchos"
+)))]
+mod sys {
+    #[inline]
+    #[cfg(feature = "empty-on-unsupported")]
+    pub(super) fn args_slice() -> &'static [&'static [u8]] {
+        &[]
+    }
+    #[cfg(not(feature = "empty-on-unsupported"))]
+    compile_error!(
+        "The `appleargs` crate is unsupported on this target, \
+        and the `\"empty-on-unsupported\"` cargo feature has \
+        not been enabled."
+    );
+}
+
+use sys::args_slice;
 
 /// An iterator over the process' apple arguments.
 ///
@@ -18,7 +43,7 @@ compile_error!("appleargs is not supported on this platform");
 /// valid UTF-8.
 #[derive(Clone)]
 pub struct AppleArgs {
-    inner: core::slice::Iter<'static, Vec<u8>>,
+    inner: core::slice::Iter<'static, &'static [u8]>,
 }
 
 impl core::fmt::Debug for AppleArgs {
@@ -71,7 +96,7 @@ impl FusedIterator for AppleArgs {}
 /// See the top-level documentation's example of what this could return.
 #[inline]
 pub fn apple_args() -> AppleArgs {
-    let inner = args_slice_iter();
+    let inner = args_slice().iter();
 
     AppleArgs { inner }
 }
@@ -81,7 +106,7 @@ pub fn apple_args() -> AppleArgs {
 /// This iterator does not check that any argument is a valid UTF-8 string.
 #[derive(Clone)]
 pub struct AppleArgsOs {
-    inner: core::slice::Iter<'static, Vec<u8>>,
+    inner: core::slice::Iter<'static, &'static [u8]>,
 }
 
 impl core::fmt::Debug for AppleArgsOs {
@@ -134,90 +159,14 @@ impl FusedIterator for AppleArgsOs {}
 /// See the top-level documentation's example of what this could return.
 #[inline]
 pub fn apple_args_os() -> AppleArgsOs {
-    let inner = args_slice_iter();
+    let inner = args_slice().iter();
 
     AppleArgsOs { inner }
 }
 
-#[allow(clippy::ptr_arg)]
-fn str_from_slice(bytes: &Vec<u8>) -> &str {
+fn str_from_slice<'a>(bytes: &&'a [u8]) -> &'a str {
     core::str::from_utf8(bytes).expect("apple argument was not valid UTF-8")
 }
-
-fn args_slice_iter() -> core::slice::Iter<'static, Vec<u8>> {
-    // This synchronizes with the `Release` store and acts as a fence.
-    let data = ARGS_DATA.load(Ordering::Acquire);
-
-    NonNull::new(data)
-        .map(|ptr| {
-            // `Relaxed` is fine because it is fenced by the `Acquire` used
-            // for `data` and `len` is written prior to storing `data`.
-            let len = ARGS_LEN.load(Ordering::Relaxed);
-            // Safety: `ptr` is always a valid slice and `len` always matches
-            // because of the orderings.
-            unsafe { core::slice::from_raw_parts(ptr.as_ptr(), len) }
-        })
-        .unwrap_or(&[])
-        .iter()
-}
-
-static ARGS_DATA: AtomicPtr<Vec<u8>> = AtomicPtr::new(ptr::null_mut());
-static ARGS_LEN: AtomicUsize = AtomicUsize::new(0);
-
-unsafe extern "C" fn init_function(
-    _argc: c_int,
-    _argv: *const *const c_char,
-    _envp: *const *const c_char,
-    mut applep: *const *const c_char,
-) {
-    let mut v: Vec<Vec<u8>> = Vec::new();
-
-    // Safety: `applep` is not null, so its valid to read another pointer from.
-    while !applep.is_null() && !applep.read().is_null() {
-        // Safety: See above
-        let p: *const i8 = applep.read();
-
-        // Safety: `applep` was pointing at a valid nul-terminated
-        // string.
-        let len = strlen(p);
-        let ptr = p as *const u8;
-        let s = core::slice::from_raw_parts(ptr, len); // Explicit nul skip.
-
-        if !s.is_empty() {
-            v.push(s.to_owned());
-        }
-
-        // Safety: This will never wrap and after incrementing
-        // past the last array element, the loop will stop.
-        applep = applep.add(1);
-    }
-
-    // `Relaxed` is fine because the store of `data` with
-    // `Release` acts as a fence, and `len` is always loaded
-    // after `data`.
-    ARGS_LEN.store(v.len(), Ordering::Relaxed);
-    ARGS_DATA.store(
-        Box::into_raw(v.into_boxed_slice()).cast::<Vec<u8>>(),
-        Ordering::Release,
-    );
-}
-
-extern "C" {
-    /// Provided by libc or compiler_builtins.
-    fn strlen(s: *const c_char) -> usize;
-}
-
-#[used]
-#[cfg_attr(
-    any(target_os = "macos", target_os = "ios"),
-    link_section = "__DATA,__mod_init_func"
-)]
-static CTOR: unsafe extern "C" fn(
-    argc: c_int,
-    argv: *const *const c_char,
-    envp: *const *const c_char,
-    applep: *const *const c_char,
-) = init_function;
 
 #[cfg(test)]
 mod tests {
