@@ -160,6 +160,20 @@ fn split_args_iter() -> SplitArgsIter {
     super::args_slice().iter().copied().filter_map(split_kv)
 }
 
+// This tries to handle edge cases like `_simple_getenv` from libplatform. It
+// takes a slice argument just to simplify testing.
+fn apple_getenv<'env>(k: &[u8], env: &[&'env [u8]]) -> Option<&'env [u8]> {
+    if k.contains(&b'\0') {
+        return None;
+    }
+    for &a in env {
+        if a.get(k.len()) == Some(&b'=') && a.starts_with(k) {
+            return Some(&a[k.len() + 1..]);
+        }
+    }
+    None
+}
+
 #[inline]
 fn split_kv<'a>(s: &'a [u8]) -> Option<(&'a [u8], &'a [u8])> {
     debug_assert!(!s.contains(&b'\0'));
@@ -170,14 +184,14 @@ fn split_kv<'a>(s: &'a [u8]) -> Option<(&'a [u8], &'a [u8])> {
 /// Searches the apple argument pseudo-env for a variable with the name `s`, and
 /// returns it, if one is found.
 ///
-/// It is analogous to [`std::env::var`], but treats the apple arguments as
-/// an environment, rather than using the "real" environment.
+/// It is analogous to [`std::env::var`], but treats the apple arguments as an
+/// environment, rather than using the "real" environment.
 ///
 /// This method returns an error if the value of the variable is not valid
 /// UTF-8. See [`apple_var_os`] for a similar function without this requirement.
 pub fn apple_var(s: impl AsRef<[u8]>) -> Result<&'static str, VarError> {
     fn apple_var_impl(s: &[u8]) -> Result<&'static str, VarError> {
-        if let Some((_, v)) = split_args_iter().find(|&(k, _)| k == s) {
+        if let Some(v) = apple_getenv(s, super::args_slice()) {
             core::str::from_utf8(v).map_err(|_| VarError::NotUnicode(v))
         } else {
             Err(VarError::NotPresent)
@@ -196,12 +210,7 @@ pub fn apple_var(s: impl AsRef<[u8]>) -> Result<&'static str, VarError> {
 /// undesirable, see [`apple_var_os`], which returns an error if the value is
 /// not valid UTF-8.
 pub fn apple_var_os(s: impl AsRef<OsStr>) -> Option<&'static OsStr> {
-    fn apple_var_os_impl(s: &OsStr) -> Option<&'static OsStr> {
-        split_args_iter()
-            .find(|&(k, _)| k == s.as_bytes())
-            .map(|(_, v)| OsStr::from_bytes(v))
-    }
-    apple_var_os_impl(s.as_ref())
+    apple_getenv(s.as_ref().as_bytes(), super::args_slice()).map(OsStr::from_bytes)
 }
 
 /// The error type returned by [`appleargs::env::apple_var`](apple_var).
@@ -217,9 +226,35 @@ pub enum VarError {
     NotUnicode(&'static [u8]),
 }
 
-// #[cfg(test)]
-// mod test {
-//     static FAKE_ARGS = &[];
-//     #[test]
-//     fn fake_apple_args()
-// }
+#[cfg(test)]
+mod test {
+    use super::*;
+    #[test]
+    fn test_apple_getenv() {
+        assert_eq!(
+            apple_getenv(b"foo", &[b"foob=1", b"fo=2", b"bfoo=3", b"foo=4"]),
+            Some(b"4".as_slice()),
+        );
+        assert_eq!(
+            apple_getenv(b"foo", &[b"foob=1", b"fo=2", b"bfoo=3", b"foo="]),
+            Some(b"".as_slice()),
+        );
+        assert_eq!(
+            apple_getenv(b"foo", &[b"foob=1", b"fo=2", b"bfoo=3", b"foo=1=2"]),
+            Some(b"1=2".as_slice()),
+        );
+        assert_eq!(apple_getenv(b"foo", &[b"bfoo=1", b"fo=2"]), None);
+        assert_eq!(
+            apple_getenv(b"foo\0", &[b"foob=1", b"fo=2", b"bfoo=3", b"foo="]),
+            None,
+        );
+        assert_eq!(
+            apple_getenv(b"=", &[b"=abc", b"==def"]),
+            Some(b"def".as_slice()),
+        );
+        assert_eq!(
+            apple_getenv(b"abc", &[b"abc=\xff\x00\xff"]),
+            Some(b"\xff\x00\xff".as_slice()),
+        );
+    }
+}
