@@ -9,7 +9,7 @@ A smol crate to grab your process' "apple arguments"
 
 ## What are apple arguments?
 
-They are an extra set of strings optionally passed to an executable by the kernel on Darwin-based operating systems. They are entirely undocumented (Open an issue if you find it :D), and as far as anyone can tell, solely intended to store or hint precomputed information about the running process for `dyld` to use. 
+They are an extra set of strings optionally passed to an executable by the kernel on Darwin-based operating systems. They are entirely undocumented (Open an issue if you find it :D), and as far as anyone can tell, solely intended to store or hint precomputed information about the running process for `dyld` to use.
 
 The values are set during the [exec sequence] of a process and subsequently read by `dyld` at various points when it starts an executable. While these can easily change, `dyld` is open source so it can be referenced for good examples like...
 
@@ -33,11 +33,15 @@ The values are set during the [exec sequence] of a process and subsequently read
 ```
 
 ## Supported Operating Systems
-This crate should on most macOS and iOS versions (but is not explictly tested). Automated testing occurs on:
+This crate should work on most macOS, iOS, and tvOS versions (but is not explictly tested). Automated testing occurs on:
 - macOS 10.15
 - macOS 11
 - macOS 12
 - iOS 12.4
+
+On unsupported platforms we will emit a compiler error by default.
+
+If this is undesirable (for example, if you need to handle "missing arg" and "wrong os" equivalently, or if you do not want to try and match our set of supported platforms), `features = ["empty-on-unsupported"]` may be enabled, which allows us to support the full API by pretending we received an empty array of apple arguments on other targets.
 
 [exec sequence]: https://github.com/apple-oss-distributions/xnu/blob/e7776783b89a353188416a9a346c6cdb4928faad/bsd/kern/kern_exec.c#L5508
 
